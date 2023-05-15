@@ -3,6 +3,7 @@ import pygame
 import random
 import math
 import time
+from AgentType import AgentType
 
 def lj_magnitude(dist, lj_target, lj_epsilon):
     return -(lj_epsilon/dist) * ((lj_target/dist)**4-(lj_target/dist)**2)
@@ -23,11 +24,16 @@ def lj_vector(robot, other_robots):
 
 
 class SystemAgent(mesa.Agent):
-    def __init__(self, unique_id, model, role, start_x, start_y):
+    def __init__(self, unique_id, model, role: AgentType, start_x, start_y):
         super().__init__(unique_id, model)
         self.role = role
+        self.behavior = behavior?
         self.x = start_x
         self.y = start_y
+        self.parent = ?
+        self.children = ?
+        
+
 
     def step(self):
         vec = lj_vector(self, self.model.agents)
