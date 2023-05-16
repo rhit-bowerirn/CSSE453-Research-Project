@@ -16,7 +16,7 @@ def lj_vector(robot, other_robots):
             dx = other_robot.x - robot.x
             dy = other_robot.y - robot.y
             dist = math.sqrt(dx**2 + dy**2)
-            if not(dist == 0) and other_robot.role == "root":
+            if not(dist == 0) and other_robot.role.value == "root":
                 mag = lj_magnitude(dist, 40, 50)
                 total_dx += mag * dx / dist
                 total_dy += mag * dy / dist
@@ -24,26 +24,27 @@ def lj_vector(robot, other_robots):
 
 
 class SystemAgent(mesa.Agent):
-    def __init__(self, unique_id, model, role: AgentType, start_x, start_y):
+    def __init__(self, unique_id, model, role: AgentType, behavior_func, draw_func, start_x, start_y):
         super().__init__(unique_id, model)
         self.role = role
-        self.behavior = behavior?
+        self.behavior_func = behavior_func
+        self.draw_func = draw_func
         self.x = start_x
         self.y = start_y
-        self.parent = ?
-        self.children = ?
+        self.parent = None
+        self.children = []
         
-
-
     def step(self):
-        vec = lj_vector(self, self.model.agents)
-        self.x += vec[0]
-        self.y += vec[1]
-        if not(self.model.space.out_of_bounds((self.x, self.y))):
-            self.model.space.move_agent(self, (self.x, self.y))
+        self.behavior_func(self)
+
+    def send(self):
+        pass
+
+    def recieve(self):
+        pass
 
     def draw(self, screen):
-        pygame.draw.circle(screen, (255, 0, 0), (self.x, self.y), 5)
+        self.draw_func(self, screen)
 
 class SystemModel(mesa.Model):
     def __init__(self, N, width, height):
@@ -63,16 +64,16 @@ class SystemModel(mesa.Model):
         for i in range(N):
             x = random.random() * width
             y = random.random() * height
-            agent = SystemAgent(i, self, "free", x, y)
-
+            agent = SystemAgent(i, self, AgentType.FREE, free_agent_behavior(), free_agent_draw(), x, y)
+            
             self.agents.append(agent)
             self.schedule.add(agent)
             self.space.place_agent(agent, (x, y))
 
-        root = SystemAgent(N, self, "root", 250, 250)
-        self.agents.append(root)
-        self.schedule.add(root)
-        self.space.place_agent(root, (250, 250))
+        root_agent = SystemAgent(N, self, AgentType.ROOT, root_agent_behavior(), root_agent_draw(), width // 2, height // 2)
+        self.agents.append(root_agent)
+        self.schedule.add(root_agent)
+        self.space.place_agent(root_agent, (width // 2, height // 2))
 
         self.running = True
     
@@ -95,6 +96,32 @@ class SystemModel(mesa.Model):
 
     def quit(self):
         pygame.quit()
+
+# Free robots
+def free_agent_behavior():
+    def behavior(agent):
+        vec = lj_vector(agent, agent.model.agents)
+        agent.x += vec[0]
+        agent.y += vec[1]
+    return behavior
+
+def free_agent_draw():
+    def draw(agent, screen):
+        pygame.draw.circle(screen, (255, 0, 0), (agent.x, agent.y), 5)
+    return draw
+
+# Root robots
+def root_agent_behavior():
+    def behavior(agent):
+        # print("Agent " + str(agent.unique_id) + " moved")
+        pass
+    return behavior
+
+def root_agent_draw():
+    def draw(agent, screen):
+        pygame.draw.circle(screen, (0, 0, 255), (agent.x, agent.y), 25)
+        pygame.draw.circle(screen, (0, 0, 255), (agent.x, agent.y), 5)
+    return draw
 
 model = SystemModel(100, 500, 500)
 model.run_model()
