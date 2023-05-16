@@ -64,13 +64,13 @@ class SystemModel(mesa.Model):
         for i in range(N):
             x = random.random() * width
             y = random.random() * height
-            agent = SystemAgent(i, self, AgentType.FREE, free_agent_behavior(), free_agent_draw(), x, y)
+            agent = SystemAgent(i, self, AgentType.FREE, free_agent_behavior, free_agent_draw, x, y)
             
             self.agents.append(agent)
             self.schedule.add(agent)
             self.space.place_agent(agent, (x, y))
 
-        root_agent = SystemAgent(N, self, AgentType.ROOT, root_agent_behavior(), root_agent_draw(), width // 2, height // 2)
+        root_agent = SystemAgent(N, self, AgentType.ROOT, root_agent_behavior, root_agent_draw, width // 2, height // 2)
         self.agents.append(root_agent)
         self.schedule.add(root_agent)
         self.space.place_agent(root_agent, (width // 2, height // 2))
@@ -98,30 +98,22 @@ class SystemModel(mesa.Model):
         pygame.quit()
 
 # Free robots
-def free_agent_behavior():
-    def behavior(agent):
-        vec = lj_vector(agent, agent.model.agents)
-        agent.x += vec[0]
-        agent.y += vec[1]
-    return behavior
+def free_agent_behavior(agent):
+    vec = lj_vector(agent, agent.model.agents)
+    agent.x += vec[0]
+    agent.y += vec[1]
 
-def free_agent_draw():
-    def draw(agent, screen):
-        pygame.draw.circle(screen, (255, 0, 0), (agent.x, agent.y), 5)
-    return draw
+def free_agent_draw(agent, screen):
+    pygame.draw.circle(screen, (255, 0, 0), (agent.x, agent.y), 5)
 
 # Root robots
-def root_agent_behavior():
-    def behavior(agent):
-        # print("Agent " + str(agent.unique_id) + " moved")
-        pass
-    return behavior
+def root_agent_behavior(agent):
+    # print("Agent " + str(agent.unique_id) + " moved")
+    pass
 
-def root_agent_draw():
-    def draw(agent, screen):
-        pygame.draw.circle(screen, (0, 0, 255), (agent.x, agent.y), 25)
-        pygame.draw.circle(screen, (0, 0, 255), (agent.x, agent.y), 5)
-    return draw
+def root_agent_draw(agent, screen):
+    pygame.draw.circle(screen, (0, 0, 255), (agent.x, agent.y), 25)
+    pygame.draw.circle(screen, (0, 0, 255), (agent.x, agent.y), 5)
 
 model = SystemModel(100, 500, 500)
 model.run_model()
