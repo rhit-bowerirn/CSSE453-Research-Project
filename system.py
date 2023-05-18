@@ -6,7 +6,7 @@ import time
 from AgentType import AgentType
 
 def lj_magnitude(dist, lj_target, lj_epsilon):
-    return -(lj_epsilon/dist) * ((lj_target/dist)**4-(lj_target/dist)**2)
+    return -(lj_epsilon / dist) * ((lj_target / dist)**4 - (lj_target / dist)**.5)
 
 def lj_vector(robot, other_robots):
     total_dx = 0
@@ -17,10 +17,25 @@ def lj_vector(robot, other_robots):
             dy = other_robot.y - robot.y
             dist = math.sqrt(dx**2 + dy**2)
             if not(dist == 0) and other_robot.role.value == "root":
-                mag = lj_magnitude(dist, 40, 50)
+                mag = lj_magnitude(dist, 25, 100)
                 total_dx += mag * dx / dist
                 total_dy += mag * dy / dist
     return (total_dx, total_dy)
+
+def obstacle_avoidance(robot, other_robots, safe_dist = 25, k = .5):
+    total_dx = 0
+    total_dy = 0
+    for other_robot in other_robots:
+        if other_robot is not robot:
+            dx = other_robot.x - robot.x
+            dy = other_robot.y - robot.y
+            dist = math.sqrt(dx**2 + dy**2)
+            if(dist < safe_dist):
+                mag = k * (dist - safe_dist)
+                total_dx += mag * dx / dist
+                total_dy += mag * dy / dist
+    return(total_dx, total_dy)
+
 
 
 class SystemAgent(mesa.Agent):
@@ -100,9 +115,11 @@ class SystemModel(mesa.Model):
 # Free robots
 def free_agent_behavior():
     def behavior(agent):
-        vec = lj_vector(agent, agent.model.agents)
-        agent.x += vec[0]
-        agent.y += vec[1]
+        lj = lj_vector(agent, agent.model.agents)
+        obst = obstacle_avoidance(agent, agent.model.agents)
+        agent.x += lj[0] + obst[0]
+        agent.y += lj[1] + obst[1]
+        agent.model.space.move_agent(agent, (agent.x, agent.y))
     return behavior
 
 def free_agent_draw():
