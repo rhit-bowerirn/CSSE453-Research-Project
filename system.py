@@ -9,7 +9,7 @@ from AgentType import AgentType
 comm_radius = 40
 vision_radius = 20
 
-pheremoneMap = {'seen':np.zeros((500,500))}
+# pheremoneMap = {'seen':np.zeros((500,500))}
 
 def lj_magnitude(dist, lj_target, lj_epsilon):
     return -(lj_epsilon/dist) * ((lj_target/dist)**4-(lj_target/dist)**2)
@@ -41,11 +41,12 @@ class SystemAgent(mesa.Agent):
         self.children = []
         self.checked_connection = False
         self.isConnected = False
-        # self.pheremoneMap = {'seen':np.zeros((500,500))}
+        self.pheremoneMap = {'seen':np.zeros((500,500))}
         
     def step(self):
         self.behavior_func(self)
         self.checked_connection = False
+        self.pheremoneMap['seen'] = self.pheremoneMap['seen']*.95
 
     def send(self):
         pass
@@ -67,6 +68,17 @@ class SystemAgent(mesa.Agent):
     #         level = max(level,neighbor.getPheremone(pheremone,x,y,polled))
     #     self.pheremoneMap[pheremone][round(x)][round(y)] = level
     #     return level
+
+    def getPhenemoe(self,pheremone,x,y):
+        x = round(x)
+        y = round(y)
+        if x<0 or x>499 or y<0 or y>499:
+            return 0
+        return self.pheremoneMap[pheremone][x][y]
+    
+    def recievePheremone(self,pheremoneMap):
+        for key in pheremoneMap.keys():
+            self.pheremoneMap[key] = np.maximum(self.pheremoneMap[key],pheremoneMap[key])
 
     def updateConnection(self):
         if self.role == AgentType.ROOT:
@@ -196,8 +208,8 @@ def scout_agent_behavior(min_strength = 1, b = 5, speed = 5, rnd = .05):
                 x = round(i+agent.x)
                 y = round(j+agent.y)
                 if not(x<0 or x>499 or y<0 or y>499):
-                    pheremoneMap['seen'][x][y] = max(strength,pheremoneMap['seen'][x][y])
-                    # agent.pheremoneMap['seen'][x][y] = max(strength,agent.pheremoneMap['seen'][x][y])
+                    # pheremoneMap['seen'][x][y] = max(strength,pheremoneMap['seen'][x][y])
+                    agent.pheremoneMap['seen'][x][y] = max(strength,agent.pheremoneMap['seen'][x][y])
 
     def seen_gradient(agent, samples = 4):
         total_strength = 0
@@ -210,7 +222,7 @@ def scout_agent_behavior(min_strength = 1, b = 5, speed = 5, rnd = .05):
             y = round(agent.y+dy)
             stren = 0
             if not(x<0 or x>499 or y<0 or y>499):
-                stren = pheremoneMap['seen'][x][y]
+                stren = agent.pheremoneMap['seen'][x][y]
             total_strength = stren*b/(b+dx*dx+dy*dy)
             dsdx = stren*-2*(dx)*b/((b+dx*dx+dy*dy)**2)
             dsdy = stren*-2*(dy)*b/((b+dx*dx+dy*dy)**2)
@@ -239,5 +251,5 @@ def scout_agent_draw():
             pygame.draw.line(screen,(128,128,128),(agent.x,agent.y),(neighbor.x,neighbor.y))
     return draw
 
-model = SystemModel(100, 500, 500)
+model = SystemModel(10, 500, 500)
 model.run_model()
