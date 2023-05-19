@@ -61,6 +61,15 @@ class SystemAgent(mesa.Agent):
     def draw(self, screen):
         self.draw_func(self, screen)
 
+    def move(self):
+        # Moves the agent while ensuring they don't move out of the space.
+        self.x = min(self.x, self.model.space.x_max)
+        self.x = max(self.x, self.model.space.x_min)
+
+        self.y = min(self.y, self.model.space.y_max)
+        self.y = max(self.y, self.model.space.y_min)
+        self.model.space.move_agent(self, (self.x, self.y))
+
 class SystemModel(mesa.Model):
     def __init__(self, N, width, height):
 
@@ -79,13 +88,13 @@ class SystemModel(mesa.Model):
         for i in range(N):
             x = random.random() * width
             y = random.random() * height
-            agent = SystemAgent(i, self, AgentType.FREE, free_agent_behavior(), free_agent_draw(), x, y)
+            agent = SystemAgent(i, self, AgentType.FREE, free_agent_behavior, free_agent_draw, x, y)
             
             self.agents.append(agent)
             self.schedule.add(agent)
             self.space.place_agent(agent, (x, y))
 
-        root_agent = SystemAgent(N, self, AgentType.ROOT, root_agent_behavior(), root_agent_draw(), width // 2, height // 2)
+        root_agent = SystemAgent(N, self, AgentType.ROOT, root_agent_behavior, root_agent_draw, width // 2, height // 2)
         self.agents.append(root_agent)
         self.schedule.add(root_agent)
         self.space.place_agent(root_agent, (width // 2, height // 2))
@@ -113,30 +122,22 @@ class SystemModel(mesa.Model):
         pygame.quit()
 
 # Free robots
-def free_agent_behavior():
-    def behavior(agent):
-        lj = lj_vector(agent, agent.model.agents)
-        obst = obstacle_avoidance(agent, agent.model.agents)
-        agent.x += lj[0] + obst[0]
-        agent.y += lj[1] + obst[1]
-        agent.model.space.move_agent(agent, (agent.x, agent.y))
-    return behavior
+def free_agent_behavior(agent):
+    lj = lj_vector(agent, agent.model.agents)
+    obst = obstacle_avoidance(agent, agent.model.agents)
+    agent.x += lj[0] + obst[0]
+    agent.y += lj[1] + obst[1]
+    agent.move()
 
-def free_agent_draw():
-    def draw(agent, screen):
-        pygame.draw.circle(screen, (255, 0, 0), (agent.x, agent.y), 5)
-    return draw
+def free_agent_draw(agent, screen):
+    pygame.draw.circle(screen, (255, 0, 0), (agent.x, agent.y), 5)
 
 # Root robots
-def root_agent_behavior():
-    def behavior(agent):
-        pass
-    return behavior
+def root_agent_behavior(agent):
+    pass
 
-def root_agent_draw():
-    def draw(agent, screen):
-        pygame.draw.circle(screen, (0, 0, 255), (agent.x, agent.y), 5)
-    return draw
+def root_agent_draw(agent, screen):
+    pygame.draw.circle(screen, (0, 0, 255), (agent.x, agent.y), 5)
 
 model = SystemModel(100, 500, 500)
 model.run_model()
