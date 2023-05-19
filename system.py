@@ -5,9 +5,10 @@ import math
 import time
 import numpy as np
 from AgentType import AgentType
+import cProfile
 
 comm_radius = 40
-vision_radius = 20
+vision_radius = 10
 
 # pheremoneMap = {'seen':np.zeros((500,500))}
 
@@ -55,23 +56,23 @@ class SystemAgent(mesa.Agent):
         pass
 
     # def getPheremone(self, pheremone, x, y, polled):
-    #     x = round(x)
-    #     y = round(y)
+    #     x = int(x)
+    #     y = int(y)
     #     if x<0 or x>499 or y<0 or y>499:
     #         return 0
-    #     level = self.pheremoneMap[pheremone][round(x)][round(y)]
+    #     level = self.pheremoneMap[pheremone][int(x)][int(y)]
     #     if self in polled:
     #         return level
     #     polled.add(self)
     #     neighbors = self.model.space.get_neighbors((self.x,self.y),comm_radius,include_center=False)
     #     for neighbor in neighbors:
     #         level = max(level,neighbor.getPheremone(pheremone,x,y,polled))
-    #     self.pheremoneMap[pheremone][round(x)][round(y)] = level
+    #     self.pheremoneMap[pheremone][int(x)][int(y)] = level
     #     return level
 
     def getPhenemoe(self,pheremone,x,y):
-        x = round(x)
-        y = round(y)
+        x = int(x)
+        y = int(y)
         if x<0 or x>499 or y<0 or y>499:
             return 0
         return self.pheremoneMap[pheremone][x][y]
@@ -179,7 +180,7 @@ def scout_agent_behavior(min_strength = 1, b = 5, speed = 5, rnd = .05):
     def behavior(agent : SystemAgent):
         neighbors = agent.model.space.get_neighbors((agent.x,agent.y),comm_radius,include_center=False)
         phstr, phgrad = seen_gradient(agent)
-        direction = -phgrad
+        direction = 10*phgrad
         strn, grad = comm_gradient(agent,neighbors)
         direction = direction + grad*(strn-min_strength)
         direction = direction + rnd*np.array([random.normalvariate(),random.normalvariate()])
@@ -202,12 +203,15 @@ def scout_agent_behavior(min_strength = 1, b = 5, speed = 5, rnd = .05):
         print('oob')
 
     def update_seen(agent):
+        threshold = b/(b+vision_radius*vision_radius)
         for i in range(-vision_radius,vision_radius):
+            i2 = i*i
             for j in range(-vision_radius,vision_radius):
-                strength = b/(b+i*i+j*j)-b/(b+vision_radius)
-                x = round(i+agent.x)
-                y = round(j+agent.y)
-                if not(x<0 or x>499 or y<0 or y>499):
+                strength = b/(b+i2+j*j)-threshold
+                # strength = b/(b+i*i+j*j)-b/(b+vision_radius*vision_radius)
+                x = int(i+agent.x)
+                y = int(j+agent.y)
+                if (x>=0 and x<=499 and y>=0 and y<=499):
                     # pheremoneMap['seen'][x][y] = max(strength,pheremoneMap['seen'][x][y])
                     agent.pheremoneMap['seen'][x][y] = max(strength,agent.pheremoneMap['seen'][x][y])
 
@@ -218,8 +222,8 @@ def scout_agent_behavior(min_strength = 1, b = 5, speed = 5, rnd = .05):
             dx = random.normalvariate(sigma=vision_radius)
             dy = random.normalvariate(sigma=vision_radius)
             # stren = agent.getPheremone('seen',agent.x+dx,agent.y+dy,set())
-            x = round(agent.x+dx)
-            y = round(agent.y+dy)
+            x = int(agent.x+dx)
+            y = int(agent.y+dy)
             stren = 0
             if not(x<0 or x>499 or y<0 or y>499):
                 stren = agent.pheremoneMap['seen'][x][y]
@@ -235,14 +239,13 @@ def scout_agent_behavior(min_strength = 1, b = 5, speed = 5, rnd = .05):
         for neighbor in neighbors:
             dx = agent.x - neighbor.x
             dy = agent.y - neighbor.y
-            strength = b/(b+dx*dx+dy*dy)-b/(b+comm_radius)
+            strength = b/(b+dx*dx+dy*dy)-b/(b+comm_radius*comm_radius)
             total_strength += strength
             dsdx = -2*(dx)*b/((b+dx*dx+dy*dy)**2)
             dsdy = -2*(dy)*b/((b+dx*dx+dy*dy)**2)
             total_gradient = total_gradient + np.array([dsdx,dsdy])
         return total_strength, total_gradient
     return behavior
-
 def scout_agent_draw():
     def draw(agent,screen):
         neighbors = agent.model.space.get_neighbors((agent.x,agent.y),comm_radius,include_center=False)
@@ -251,5 +254,5 @@ def scout_agent_draw():
             pygame.draw.line(screen,(128,128,128),(agent.x,agent.y),(neighbor.x,neighbor.y))
     return draw
 
-model = SystemModel(10, 500, 500)
-model.run_model()
+model = SystemModel(100, 500, 500)
+cProfile.run('model.run_model()')
