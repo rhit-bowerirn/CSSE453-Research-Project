@@ -7,6 +7,9 @@ import numpy as np
 from AgentType import AgentType
 
 comm_radius = 40
+vision_radius = 20
+
+pheremoneMap = {'seen':np.zeros((500,500))}
 
 def lj_magnitude(dist, lj_target, lj_epsilon):
     return -(lj_epsilon/dist) * ((lj_target/dist)**4-(lj_target/dist)**2)
@@ -38,6 +41,7 @@ class SystemAgent(mesa.Agent):
         self.children = []
         self.checked_connection = False
         self.isConnected = False
+        # self.pheremoneMap = {'seen':np.zeros((500,500))}
         
     def step(self):
         self.behavior_func(self)
@@ -48,6 +52,21 @@ class SystemAgent(mesa.Agent):
 
     def recieve(self):
         pass
+
+    # def getPheremone(self, pheremone, x, y, polled):
+    #     x = round(x)
+    #     y = round(y)
+    #     if x<0 or x>499 or y<0 or y>499:
+    #         return 0
+    #     level = self.pheremoneMap[pheremone][round(x)][round(y)]
+    #     if self in polled:
+    #         return level
+    #     polled.add(self)
+    #     neighbors = self.model.space.get_neighbors((self.x,self.y),comm_radius,include_center=False)
+    #     for neighbor in neighbors:
+    #         level = max(level,neighbor.getPheremone(pheremone,x,y,polled))
+    #     self.pheremoneMap[pheremone][round(x)][round(y)] = level
+    #     return level
 
     def updateConnection(self):
         if self.role == AgentType.ROOT:
@@ -147,13 +166,15 @@ def root_agent_draw():
 def scout_agent_behavior(min_strength = 1, b = 5, speed = 5, rnd = .05):
     def behavior(agent : SystemAgent):
         neighbors = agent.model.space.get_neighbors((agent.x,agent.y),comm_radius,include_center=False)
+        phstr, phgrad = seen_gradient(agent)
+        direction = -phgrad
         strn, grad = comm_gradient(agent,neighbors)
-        direction = grad*(strn-min_strength)
+        direction = direction + grad*(strn-min_strength)
         direction = direction + rnd*np.array([random.normalvariate(),random.normalvariate()])
         if not agent.updateConnection():
             home = np.array([agent.x-250,agent.y-250])
             home = home/np.sqrt((home*home).sum())
-            direction = direction - .1*home
+            direction = direction - home
         direction = speed*direction
         new_pos = direction + np.array([agent.x,agent.y])
         # direction = (grad[0] * (strn - min_strength),grad[1] * (strn - min_strength))
@@ -164,8 +185,38 @@ def scout_agent_behavior(min_strength = 1, b = 5, speed = 5, rnd = .05):
             agent.model.space.move_agent(agent,new_pos)
             agent.x = new_pos[0]
             agent.y = new_pos[1]
+            update_seen(agent)
             return
         print('oob')
+
+    def update_seen(agent):
+        for i in range(-vision_radius,vision_radius):
+            for j in range(-vision_radius,vision_radius):
+                strength = b/(b+i*i+j*j)-b/(b+vision_radius)
+                x = round(i+agent.x)
+                y = round(j+agent.y)
+                if not(x<0 or x>499 or y<0 or y>499):
+                    pheremoneMap['seen'][x][y] = max(strength,pheremoneMap['seen'][x][y])
+                    # agent.pheremoneMap['seen'][x][y] = max(strength,agent.pheremoneMap['seen'][x][y])
+
+    def seen_gradient(agent, samples = 4):
+        total_strength = 0
+        total_gradient = np.array([0,0])
+        for i in range(samples):
+            dx = random.normalvariate(sigma=vision_radius)
+            dy = random.normalvariate(sigma=vision_radius)
+            # stren = agent.getPheremone('seen',agent.x+dx,agent.y+dy,set())
+            x = round(agent.x+dx)
+            y = round(agent.y+dy)
+            stren = 0
+            if not(x<0 or x>499 or y<0 or y>499):
+                stren = pheremoneMap['seen'][x][y]
+            total_strength = stren*b/(b+dx*dx+dy*dy)
+            dsdx = stren*-2*(dx)*b/((b+dx*dx+dy*dy)**2)
+            dsdy = stren*-2*(dy)*b/((b+dx*dx+dy*dy)**2)
+            total_gradient = total_gradient + np.array([dsdx,dsdy])
+        return total_strength, total_gradient
+    
     def comm_gradient(agent, neighbors):
         total_strength = 0
         total_gradient = np.array([0,0])
