@@ -6,6 +6,8 @@ import time
 import numpy as np
 from AgentType import AgentType
 
+comm_radius = 40
+
 def lj_magnitude(dist, lj_target, lj_epsilon):
     return -(lj_epsilon/dist) * ((lj_target/dist)**4-(lj_target/dist)**2)
 
@@ -34,15 +36,33 @@ class SystemAgent(mesa.Agent):
         self.y = start_y
         self.parent = None
         self.children = []
+        self.checked_connection = False
+        self.isConnected = False
         
     def step(self):
         self.behavior_func(self)
+        self.checked_connection = False
 
     def send(self):
         pass
 
     def recieve(self):
         pass
+
+    def updateConnection(self):
+        if self.role == AgentType.ROOT:
+            return True
+        if self.checked_connection:
+            return self.isConnected
+        self.checked_connection = True
+        self.isConnected = False
+        neighbors = self.model.space.get_neighbors((self.x,self.y),comm_radius,include_center=False)
+        for neighbor in neighbors:
+            if neighbor.updateConnection():
+                self.isConnected = True
+                return True
+        return False
+
 
     def draw(self, screen):
         self.draw_func(self, screen)
@@ -63,8 +83,8 @@ class SystemModel(mesa.Model):
         self.space = mesa.space.ContinuousSpace(width, height, False)
         
         for i in range(N):
-            x = random.random() * width / 4 + width / 2 - width / 8
-            y = random.random() * height / 4 + height / 2 - height / 8
+            x = random.random() * width
+            y = random.random() * height
             agent = SystemAgent(i, self, AgentType.FREE, scout_agent_behavior(), scout_agent_draw(), x, y)
             
             self.agents.append(agent)
@@ -124,16 +144,16 @@ def root_agent_draw():
 
 # Scout robots
  
-def scout_agent_behavior(comm_radius = 40, min_strength = 1, b = 5, speed = 5, rnd = .05):
+def scout_agent_behavior(min_strength = 1, b = 5, speed = 5, rnd = .05):
     def behavior(agent : SystemAgent):
         neighbors = agent.model.space.get_neighbors((agent.x,agent.y),comm_radius,include_center=False)
         strn, grad = comm_gradient(agent,neighbors)
-        if len(neighbors) == 0:
-            strn = 0
-            grad = np.array([agent.x-250,agent.y-250])
-            grad = grad/np.sqrt((grad*grad).sum())
         direction = grad*(strn-min_strength)
         direction = direction + rnd*np.array([random.normalvariate(),random.normalvariate()])
+        if not agent.updateConnection():
+            home = np.array([agent.x-250,agent.y-250])
+            home = home/np.sqrt((home*home).sum())
+            direction = direction - .1*home
         direction = speed*direction
         new_pos = direction + np.array([agent.x,agent.y])
         # direction = (grad[0] * (strn - min_strength),grad[1] * (strn - min_strength))
@@ -160,7 +180,7 @@ def scout_agent_behavior(comm_radius = 40, min_strength = 1, b = 5, speed = 5, r
         return total_strength, total_gradient
     return behavior
 
-def scout_agent_draw(comm_radius = 40):
+def scout_agent_draw():
     def draw(agent,screen):
         neighbors = agent.model.space.get_neighbors((agent.x,agent.y),comm_radius,include_center=False)
         pygame.draw.circle(screen, (128,0,255), (agent.x, agent.y), 5)
