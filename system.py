@@ -8,7 +8,7 @@ from AgentType import AgentType
 import cProfile
 
 comm_radius = 40
-vision_radius = 10
+vision_radius = 20
 
 # pheremoneMap = {'seen':np.zeros((500,500))}
 
@@ -47,7 +47,10 @@ class SystemAgent(mesa.Agent):
     def step(self):
         self.behavior_func(self)
         self.checked_connection = False
-        self.pheremoneMap['seen'] = self.pheremoneMap['seen']*.95
+        neighbors = self.model.space.get_neighbors((self.x,self.y),comm_radius,include_center=False)
+        for neighbor in neighbors:
+            neighbor.recievePheremone(self.pheremoneMap)
+        self.pheremoneMap['seen'] = self.pheremoneMap['seen']*.9
 
     def send(self):
         pass
@@ -123,10 +126,10 @@ class SystemModel(mesa.Model):
             self.schedule.add(agent)
             self.space.place_agent(agent, (x, y))
 
-        root_agent = SystemAgent(N, self, AgentType.ROOT, root_agent_behavior(), root_agent_draw(), width // 2, height // 2)
-        self.agents.append(root_agent)
-        self.schedule.add(root_agent)
-        self.space.place_agent(root_agent, (width // 2, height // 2))
+        self.root_agent = SystemAgent(N, self, AgentType.ROOT, root_agent_behavior(), root_agent_draw(), width // 2, height // 2)
+        self.agents.append(self.root_agent)
+        self.schedule.add(self.root_agent)
+        self.space.place_agent(self.root_agent, (width // 2, height // 2))
 
         self.running = True
     
@@ -139,7 +142,9 @@ class SystemModel(mesa.Model):
         self.update_display()
 
     def update_display(self):
-        self.screen.fill((255, 255, 255))
+        # self.screen.fill((255, 255, 255))
+        surf = pygame.surfarray.make_surface(self.root_agent.pheremoneMap['seen']*10)
+        self.screen.blit(surf, (0,0))
         self.draw_agents()
         pygame.display.flip()
 
@@ -176,7 +181,7 @@ def root_agent_draw():
 
 # Scout robots
  
-def scout_agent_behavior(min_strength = 1, b = 5, speed = 5, rnd = .05):
+def scout_agent_behavior(min_strength = .1, b = 10, speed = 5, rnd = .0):
     def behavior(agent : SystemAgent):
         neighbors = agent.model.space.get_neighbors((agent.x,agent.y),comm_radius,include_center=False)
         phstr, phgrad = seen_gradient(agent)
@@ -215,7 +220,7 @@ def scout_agent_behavior(min_strength = 1, b = 5, speed = 5, rnd = .05):
                     # pheremoneMap['seen'][x][y] = max(strength,pheremoneMap['seen'][x][y])
                     agent.pheremoneMap['seen'][x][y] = max(strength,agent.pheremoneMap['seen'][x][y])
 
-    def seen_gradient(agent, samples = 4):
+    def seen_gradient(agent, samples = 40):
         total_strength = 0
         total_gradient = np.array([0,0])
         for i in range(samples):
