@@ -6,8 +6,9 @@ import time
 import numpy as np
 from AgentType import AgentType
 import cProfile
+# from numba import jit, cuda
 
-comm_radius = 40
+comm_radius = 50
 vision_radius = 20
 
 # pheremoneMap = {'seen':np.zeros((500,500))}
@@ -50,7 +51,7 @@ class SystemAgent(mesa.Agent):
         neighbors = self.model.space.get_neighbors((self.x,self.y),comm_radius,include_center=False)
         for neighbor in neighbors:
             neighbor.recievePheremone(self.pheremoneMap)
-        self.pheremoneMap['seen'] = self.pheremoneMap['seen']*.9
+        self.pheremoneMap['seen'] = self.pheremoneMap['seen']*.99
 
     def send(self):
         pass
@@ -143,7 +144,8 @@ class SystemModel(mesa.Model):
 
     def update_display(self):
         # self.screen.fill((255, 255, 255))
-        surf = pygame.surfarray.make_surface(self.root_agent.pheremoneMap['seen']*10)
+        mx = self.root_agent.pheremoneMap['seen'].max()
+        surf = pygame.surfarray.make_surface(self.root_agent.pheremoneMap['seen']*(255/mx))
         self.screen.blit(surf, (0,0))
         self.draw_agents()
         pygame.display.flip()
@@ -180,21 +182,46 @@ def root_agent_draw():
     return draw
 
 # Scout robots
- 
-def scout_agent_behavior(min_strength = .1, b = 10, speed = 5, rnd = .0):
+def normalize(vec):
+    norm = np.linalg.norm(vec)
+    if norm != 0:
+        return vec/norm
+    return vec
+
+def scout_agent_behavior(speed = 5, relative_strengths = (.9,.1,.0), min_strength=.5,b=.1, home = np.array([250,250])):
     def behavior(agent : SystemAgent):
+        pos = np.array([agent.x,agent.y])
         neighbors = agent.model.space.get_neighbors((agent.x,agent.y),comm_radius,include_center=False)
         phstr, phgrad = seen_gradient(agent)
-        direction = 10*phgrad
-        strn, grad = comm_gradient(agent,neighbors)
-        direction = direction + grad*(strn-min_strength)
-        direction = direction + rnd*np.array([random.normalvariate(),random.normalvariate()])
+        phgrad = normalize(phgrad)
+        commstr, commgrad = comm_gradient(agent,neighbors)
+        commgrad = commgrad * (commstr - min_strength)
+        commgrad = normalize(commgrad)
+        randgrad = np.random.normal(size=2)
+        randgrad = normalize(randgrad)
+        new_pos = relative_strengths[0]*phgrad
+        new_pos = relative_strengths[1]*commgrad + new_pos
+        new_pos = relative_strengths[2]*randgrad + new_pos
         if not agent.updateConnection():
-            home = np.array([agent.x-250,agent.y-250])
-            home = home/np.sqrt((home*home).sum())
-            direction = direction - home
-        direction = speed*direction
-        new_pos = direction + np.array([agent.x,agent.y])
+            new_pos = new_pos + normalize(home-pos)
+        new_pos = normalize(new_pos)
+        new_pos *= speed
+        new_pos = new_pos + pos
+        # neighbors = agent.model.space.get_neighbors((agent.x,agent.y),comm_radius,include_center=False)
+        # phstr, phgrad = seen_gradient(agent)
+        # direction = phgrad
+        # norm = np.linalg.norm(phgrad,ord=2)
+        # if norm != 0:
+        #     direction/=norm
+        # strn, grad = comm_gradient(agent,neighbors)
+        # direction = direction + grad*(strn-min_strength)
+        # direction = direction + rnd*np.array([random.normalvariate(),random.normalvariate()])
+        # # if not agent.updateConnection():
+        # #     home = np.array([agent.x-250,agent.y-250])
+        # #     home = home/np.sqrt((home*home).sum())
+        # #     direction = direction - home
+        # direction = speed*direction
+        # new_pos = direction + np.array([agent.x,agent.y])
         # direction = (grad[0] * (strn - min_strength),grad[1] * (strn - min_strength))
         # direction = (random.random()+direction[0],random.random()+direction[1])
         # direction = (direction[0],direction[1])
@@ -204,38 +231,53 @@ def scout_agent_behavior(min_strength = .1, b = 10, speed = 5, rnd = .0):
             agent.x = new_pos[0]
             agent.y = new_pos[1]
             update_seen(agent)
+            # gpu_update_seen(agent.pheremoneMap['seen'],agent.x,agent.y,b)
             return
         print('oob')
 
     def update_seen(agent):
-        threshold = b/(b+vision_radius*vision_radius)
-        for i in range(-vision_radius,vision_radius):
+        xmax = agent.model.space.width
+        ymax = agent.model.space.height
+        threshold = vision_radius*b/(b+vision_radius*vision_radius)
+        x = int(agent.x)
+        y = int(agent.y)
+        for i in range(vision_radius):
             i2 = i*i
-            for j in range(-vision_radius,vision_radius):
-                strength = b/(b+i2+j*j)-threshold
-                # strength = b/(b+i*i+j*j)-b/(b+vision_radius*vision_radius)
-                x = int(i+agent.x)
-                y = int(j+agent.y)
-                if (x>=0 and x<=499 and y>=0 and y<=499):
-                    # pheremoneMap['seen'][x][y] = max(strength,pheremoneMap['seen'][x][y])
-                    agent.pheremoneMap['seen'][x][y] = max(strength,agent.pheremoneMap['seen'][x][y])
+            for j in range(vision_radius):
+                # strength = (vision_radius*vision_radius-i*i-j*j)
+                strength = vision_radius*b/(b+i2+j*j)-threshold
+                x1 = x-i
+                x2 = x+i
+                y1 = y-j
+                y2 = y+j
+                if(x1>=0 and x1<xmax):
+                    if(y1>=0 and y1<ymax):
+                        agent.pheremoneMap['seen'][x1][y1] = max(strength,agent.pheremoneMap['seen'][x1][y1])
+                    if(y2>=0 and y2<ymax):
+                        agent.pheremoneMap['seen'][x1][y2] = max(strength,agent.pheremoneMap['seen'][x1][y2])
+                if(x2>=0 and x2<xmax):
+                    if(y1>=0 and y1<ymax):
+                        agent.pheremoneMap['seen'][x2][y1] = max(strength,agent.pheremoneMap['seen'][x2][y1])
+                    if(y2>=0 and y2<ymax):
+                        agent.pheremoneMap['seen'][x2][y2] = max(strength,agent.pheremoneMap['seen'][x2][y2])
 
-    def seen_gradient(agent, samples = 40):
+    def seen_gradient(agent, samples = 10):
         total_strength = 0
         total_gradient = np.array([0,0])
         for i in range(samples):
-            dx = random.normalvariate(sigma=vision_radius)
-            dy = random.normalvariate(sigma=vision_radius)
-            # stren = agent.getPheremone('seen',agent.x+dx,agent.y+dy,set())
+            dx = random.normalvariate(sigma=vision_radius*2)
+            dy = random.normalvariate(sigma=vision_radius*2)
             x = int(agent.x+dx)
             y = int(agent.y+dy)
             stren = 0
             if not(x<0 or x>499 or y<0 or y>499):
                 stren = agent.pheremoneMap['seen'][x][y]
-            total_strength = stren*b/(b+dx*dx+dy*dy)
-            dsdx = stren*-2*(dx)*b/((b+dx*dx+dy*dy)**2)
-            dsdy = stren*-2*(dy)*b/((b+dx*dx+dy*dy)**2)
+            total_strength += stren*b/(b+dx*dx+dy*dy)
+            dsdx = stren*-2*dx*b/((b+dx*dx+dy*dy)**2)
+            dsdy = stren*-2*dy*b/((b+dx*dx+dy*dy)**2)
             total_gradient = total_gradient + np.array([dsdx,dsdy])
+        total_strength /= samples
+        total_gradient /= samples
         return total_strength, total_gradient
     
     def comm_gradient(agent, neighbors):
@@ -259,5 +301,17 @@ def scout_agent_draw():
             pygame.draw.line(screen,(128,128,128),(agent.x,agent.y),(neighbor.x,neighbor.y))
     return draw
 
-model = SystemModel(100, 500, 500)
-cProfile.run('model.run_model()')
+
+# @jit(target_backend='cuda')
+# def gpu_update_seen(arr,x,y,b):
+#     threshold = b/(b+vision_radius*vision_radius)
+#     for i in range(500):
+#         dx2 = (i-x)*(i-x)
+#         for j in range(500):
+#             dy2 = (j-y)*(j-y)
+#             strength = b/(b+dx2+dy2)-threshold
+#             arr[i][j] = max(strength,arr[i][j])
+
+model = SystemModel(20, 500, 500)
+model.run_model()
+# cProfile.run('model.run_model()',sort='tottime')
