@@ -3,9 +3,9 @@ import pygame
 import random
 import math
 import time
-from AgentType import AgentType
 from Root import Root
 from Worker import Worker
+from Networker import Networker
 
 class SystemModel(mesa.Model):
     def __init__(self, N, width, height):
@@ -22,10 +22,10 @@ class SystemModel(mesa.Model):
         self.schedule = mesa.time.RandomActivation(self)
         self.space = mesa.space.ContinuousSpace(width, height, False)
         
-        # for i in range(N):
-        #     x = random.random() * width
-        #     y = random.random() * height
-        #     agent = SystemAgent(i, self, AgentType.FREE, free_agent_behavior(), free_agent_draw(), x, y)
+        for i in range(N):
+            x = random.random() * width
+            y = random.random() * height
+            agent = SystemAgent(self,i, Networker, x, y)
             
         #     self.agents.append(agent)
         #     self.schedule.add(agent)
@@ -58,12 +58,19 @@ class SystemModel(mesa.Model):
     def quit(self):
         pygame.quit()
 
+class Agent(mesa.Agent):
+    def __init__(self, unique_id, model, start_x,start_y):
+        super().__init__(unique_id,model)
+        self.x  = start_x
+        self.y  = start_y
+
 class SystemAgent(mesa.Agent):
     def __init__(self, unique_id, model, role, start_x, start_y):
         super().__init__(unique_id, model)
-        self.role = role
+        # self.role = role
         self.x = start_x
         self.y = start_y
+        model.behavior()
 
     def step(self):
         vec = lj_vector(self, self.model.agents)
@@ -74,6 +81,10 @@ class SystemAgent(mesa.Agent):
 
     def draw(self, screen):
         pygame.draw.circle(screen, (255, 0, 0), (self.x, self.y), 5)
+def free_agent_behavior():
+    pass
+def free_agent_draw():
+    pass
 
 root = Root(1)
 print(root.ID)
@@ -81,4 +92,4 @@ print(root.ID)
 
 
 model = SystemModel(100, 500, 500)
-# model.run_model()
+model.run_model()

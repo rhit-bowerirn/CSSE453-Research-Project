@@ -151,7 +151,7 @@ def scout_agent_behavior(comm_radius = 40, min_strength = 1, b = 5, speed = 5, r
             grad = np.array([agent.x-250,agent.y-250])
             grad = grad/np.sqrt((grad*grad).sum())
         direction = grad*(strn-min_strength)
-        direction = direction + rnd*np.array([random.normalvariate(),random.normalvariate()])
+        # direction = direction + rnd*np.array([random.normalvariate(),random.normalvariate()])
         direction = speed*direction
         new_pos = direction + np.array([agent.x,agent.y])
         # direction = (grad[0] * (strn - min_strength),grad[1] * (strn - min_strength))
