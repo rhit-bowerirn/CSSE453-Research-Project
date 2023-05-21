@@ -6,6 +6,10 @@ import time
 import numpy as np
 from AgentType import AgentType
 import cProfile
+
+
+from ParallelActivation import ParallelActivation
+from mesa.time import RandomActivation
 # from numba import jit, cuda
 
 comm_radius = 50
@@ -105,6 +109,8 @@ class SystemAgent(mesa.Agent):
 
 class SystemModel(mesa.Model):
     def __init__(self, N, width, height):
+        self.schedule = ParallelActivation(self) # TODO Depending on where this is in the init list, different errors happen
+        # self.schedule = RandomActivation(self) 
 
         pygame.init()
 
@@ -115,8 +121,13 @@ class SystemModel(mesa.Model):
         self.agents = []
         self.width = width
         self.height = height
-        self.schedule = mesa.time.RandomActivation(self)
+
         self.space = mesa.space.ContinuousSpace(width, height, False)
+
+        self.clock = pygame.time.Clock()
+        self.total_time = self.clock.get_time()
+        self.last_print_time = self.total_time
+        self.one_second_frame_count = 0
         
         for i in range(N):
             x = random.random() * width
@@ -141,6 +152,13 @@ class SystemModel(mesa.Model):
                 self.quit()
         self.schedule.step()
         self.update_display()
+        self.total_time += self.clock.get_time()
+        if self.total_time - self.last_print_time >= 1000:
+            print(f"FPS: {self.one_second_frame_count}")
+            self.one_second_frame_count = 0
+            self.last_print_time = self.total_time
+        self.one_second_frame_count += 1
+        self.clock.tick()   
 
     def update_display(self):
         # self.screen.fill((255, 255, 255))
@@ -188,7 +206,7 @@ def normalize(vec):
         return vec/norm
     return vec
 
-def scout_agent_behavior(speed = 5, relative_strengths = (.9,.1,.0), min_strength=.5,b=.1, home = np.array([250,250])):
+def scout_agent_behavior(speed = 5, relative_strengths = (.9,.1,.0), min_strength=.5, b=.1, home = np.array([250,250])):
     def behavior(agent : SystemAgent):
         pos = np.array([agent.x,agent.y])
         neighbors = agent.model.space.get_neighbors((agent.x,agent.y),comm_radius,include_center=False)
@@ -233,7 +251,6 @@ def scout_agent_behavior(speed = 5, relative_strengths = (.9,.1,.0), min_strengt
             update_seen(agent)
             # gpu_update_seen(agent.pheremoneMap['seen'],agent.x,agent.y,b)
             return
-        print('oob')
 
     def update_seen(agent):
         xmax = agent.model.space.width
@@ -293,6 +310,7 @@ def scout_agent_behavior(speed = 5, relative_strengths = (.9,.1,.0), min_strengt
             total_gradient = total_gradient + np.array([dsdx,dsdy])
         return total_strength, total_gradient
     return behavior
+
 def scout_agent_draw():
     def draw(agent,screen):
         neighbors = agent.model.space.get_neighbors((agent.x,agent.y),comm_radius,include_center=False)
@@ -312,6 +330,6 @@ def scout_agent_draw():
 #             strength = b/(b+dx2+dy2)-threshold
 #             arr[i][j] = max(strength,arr[i][j])
 
-model = SystemModel(20, 500, 500)
+model = SystemModel(100, 500, 500)
 model.run_model()
 # cProfile.run('model.run_model()',sort='tottime')
