@@ -8,6 +8,7 @@ from AgentType import AgentType
 from Color import Color
 find = 0
 
+
 def lj_magnitude(dist, lj_target, lj_epsilon):
     return -(lj_epsilon / dist) * ((lj_target / dist)**4 - (lj_target / dist)**.5)
 
@@ -133,6 +134,7 @@ def scout_agent_behavior(comm_radius = 40, min_strength = 1, b = 5, speed = 5, r
             return
         else:
             # TODO explore
+            return
 
     # iterate through each neighbor,
     # if no neighbors, then return -1
