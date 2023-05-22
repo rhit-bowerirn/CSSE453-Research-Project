@@ -6,10 +6,15 @@ import time
 import numpy as np
 from AgentType import AgentType
 import cProfile
-# from numba import jit, cuda
+from numba import jit, cuda
 
 comm_radius = 50
 vision_radius = 20
+max_seen_strength = 1
+min_seen_radius = 1
+isToroidal = False
+
+strength = []
 
 # pheremoneMap = {'seen':np.zeros((500,500))}
 
@@ -21,8 +26,8 @@ def lj_vector(robot, other_robots):
     total_dy = 0
     for other_robot in other_robots:
         if other_robot is not robot:
-            dx = other_robot.x - robot.x
-            dy = other_robot.y - robot.y
+            dx = other_robot.pos[0] - robot.pos[0]
+            dy = other_robot.pos[1] - robot.pos[1]
             dist = math.sqrt(dx**2 + dy**2)
             if not(dist == 0) and other_robot.role.value == "root":
                 mag = lj_magnitude(dist, 40, 50)
@@ -32,13 +37,11 @@ def lj_vector(robot, other_robots):
 
 
 class SystemAgent(mesa.Agent):
-    def __init__(self, unique_id, model, role: AgentType, behavior_func, draw_func, start_x, start_y):
+    def __init__(self, unique_id, model, role: AgentType, behavior_func, draw_func):
         super().__init__(unique_id, model)
         self.role = role
         self.behavior_func = behavior_func
         self.draw_func = draw_func
-        self.x = start_x
-        self.y = start_y
         self.parent = None
         self.children = []
         self.checked_connection = False
@@ -48,10 +51,11 @@ class SystemAgent(mesa.Agent):
     def step(self):
         self.behavior_func(self)
         self.checked_connection = False
-        neighbors = self.model.space.get_neighbors((self.x,self.y),comm_radius,include_center=False)
+        neighbors = self.model.space.get_neighbors((self.pos[0],self.pos[1]),comm_radius,include_center=False)
+        self.pheremoneMap['seen'] = self.pheremoneMap['seen']*.995
         for neighbor in neighbors:
             neighbor.recievePheremone(self.pheremoneMap)
-        self.pheremoneMap['seen'] = self.pheremoneMap['seen']*.99
+        
 
     def send(self):
         pass
@@ -59,27 +63,19 @@ class SystemAgent(mesa.Agent):
     def recieve(self):
         pass
 
-    # def getPheremone(self, pheremone, x, y, polled):
-    #     x = int(x)
-    #     y = int(y)
-    #     if x<0 or x>499 or y<0 or y>499:
-    #         return 0
-    #     level = self.pheremoneMap[pheremone][int(x)][int(y)]
-    #     if self in polled:
-    #         return level
-    #     polled.add(self)
-    #     neighbors = self.model.space.get_neighbors((self.x,self.y),comm_radius,include_center=False)
-    #     for neighbor in neighbors:
-    #         level = max(level,neighbor.getPheremone(pheremone,x,y,polled))
-    #     self.pheremoneMap[pheremone][int(x)][int(y)] = level
-    #     return level
-
-    def getPhenemoe(self,pheremone,x,y):
+    def getPheremone(self,pheremone,x,y):
         x = int(x)
         y = int(y)
-        if x<0 or x>499 or y<0 or y>499:
-            return 0
+        if isToroidal:
+            x = x%self.model.space.width
+            y = y%self.model.space.height
+        if self.model.space.out_of_bounds((x,y)):
+            return max_seen_strength
         return self.pheremoneMap[pheremone][x][y]
+    
+    def getConnections(self):
+        return self.model.space.get_neighbors((self.pos[0],self.pos[1]),comm_radius,include_center=False)
+
     
     def recievePheremone(self,pheremoneMap):
         for key in pheremoneMap.keys():
@@ -92,7 +88,7 @@ class SystemAgent(mesa.Agent):
             return self.isConnected
         self.checked_connection = True
         self.isConnected = False
-        neighbors = self.model.space.get_neighbors((self.x,self.y),comm_radius,include_center=False)
+        neighbors = self.getConnections()
         for neighbor in neighbors:
             if neighbor.updateConnection():
                 self.isConnected = True
@@ -116,18 +112,18 @@ class SystemModel(mesa.Model):
         self.width = width
         self.height = height
         self.schedule = mesa.time.RandomActivation(self)
-        self.space = mesa.space.ContinuousSpace(width, height, False)
+        self.space = mesa.space.ContinuousSpace(width, height, isToroidal)
         
         for i in range(N):
             x = random.random() * width
             y = random.random() * height
-            agent = SystemAgent(i, self, AgentType.FREE, scout_agent_behavior(), scout_agent_draw(), x, y)
+            agent = SystemAgent(i, self, AgentType.FREE, scout_agent_behavior(), scout_agent_draw())
             
             self.agents.append(agent)
             self.schedule.add(agent)
             self.space.place_agent(agent, (x, y))
 
-        self.root_agent = SystemAgent(N, self, AgentType.ROOT, root_agent_behavior(), root_agent_draw(), width // 2, height // 2)
+        self.root_agent = SystemAgent(N, self, AgentType.ROOT, root_agent_behavior(), root_agent_draw())
         self.agents.append(self.root_agent)
         self.schedule.add(self.root_agent)
         self.space.place_agent(self.root_agent, (width // 2, height // 2))
@@ -143,9 +139,7 @@ class SystemModel(mesa.Model):
         self.update_display()
 
     def update_display(self):
-        # self.screen.fill((255, 255, 255))
-        mx = self.root_agent.pheremoneMap['seen'].max()
-        surf = pygame.surfarray.make_surface(self.root_agent.pheremoneMap['seen']*(255/mx))
+        surf = pygame.surfarray.make_surface(self.root_agent.pheremoneMap['seen']*255/max_seen_strength)
         self.screen.blit(surf, (0,0))
         self.draw_agents()
         pygame.display.flip()
@@ -161,13 +155,13 @@ class SystemModel(mesa.Model):
 def free_agent_behavior():
     def behavior(agent):
         vec = lj_vector(agent, agent.model.agents)
-        agent.x += vec[0]
-        agent.y += vec[1]
+        agent.pos[0] += vec[0]
+        agent.pos[1] += vec[1]
     return behavior
 
 def free_agent_draw():
     def draw(agent, screen):
-        pygame.draw.circle(screen, (255, 0, 0), (agent.x, agent.y), 5)
+        pygame.draw.circle(screen, (255, 0, 0), (agent.pos[0], agent.pos[1]), 5)
     return draw
 
 # Root robots
@@ -178,7 +172,7 @@ def root_agent_behavior():
 
 def root_agent_draw():
     def draw(agent, screen):
-        pygame.draw.circle(screen, (0, 0, 255), (agent.x, agent.y), 5)
+        pygame.draw.circle(screen, (0, 0, 255), (agent.pos[0], agent.pos[1]), 5)
     return draw
 
 # Scout robots
@@ -188,11 +182,12 @@ def normalize(vec):
         return vec/norm
     return vec
 
-def scout_agent_behavior(speed = 5, relative_strengths = (.9,.1,.0), min_strength=.5,b=.1, home = np.array([250,250])):
+def scout_agent_behavior(speed = 5, relative_strengths = (.9,.08,.02), min_strength = .5 ,home = np.array([250,250]), last_connection = np.array([250,250]), vis_rad = vision_radius, seen_strength = max_seen_strength, min_rad = min_seen_radius):
     def behavior(agent : SystemAgent):
-        pos = np.array([agent.x,agent.y])
-        neighbors = agent.model.space.get_neighbors((agent.x,agent.y),comm_radius,include_center=False)
+        pos = np.array(agent.pos)
+        neighbors = agent.getConnections()
         phstr, phgrad = seen_gradient(agent)
+        strength.append(phstr)
         phgrad = normalize(phgrad)
         commstr, commgrad = comm_gradient(agent,neighbors)
         commgrad = commgrad * (commstr - min_strength)
@@ -202,50 +197,40 @@ def scout_agent_behavior(speed = 5, relative_strengths = (.9,.1,.0), min_strengt
         new_pos = relative_strengths[0]*phgrad
         new_pos = relative_strengths[1]*commgrad + new_pos
         new_pos = relative_strengths[2]*randgrad + new_pos
-        if not agent.updateConnection():
-            new_pos = new_pos + normalize(home-pos)
+        if len(neighbors)==0:
+            if np.linalg.norm(last_connection-pos) < 5:
+                last_connection[0] = home[0]
+                last_connection[1] = home[1]
+            new_pos = new_pos + normalize(last_connection-pos)
+        else:
+            last_connection[0] = pos[0]
+            last_connection[1] = pos[1]
+        # if not agent.updateConnection():
+        #         new_pos = new_pos + normalize(home-pos)
         new_pos = normalize(new_pos)
         new_pos *= speed
         new_pos = new_pos + pos
-        # neighbors = agent.model.space.get_neighbors((agent.x,agent.y),comm_radius,include_center=False)
-        # phstr, phgrad = seen_gradient(agent)
-        # direction = phgrad
-        # norm = np.linalg.norm(phgrad,ord=2)
-        # if norm != 0:
-        #     direction/=norm
-        # strn, grad = comm_gradient(agent,neighbors)
-        # direction = direction + grad*(strn-min_strength)
-        # direction = direction + rnd*np.array([random.normalvariate(),random.normalvariate()])
-        # # if not agent.updateConnection():
-        # #     home = np.array([agent.x-250,agent.y-250])
-        # #     home = home/np.sqrt((home*home).sum())
-        # #     direction = direction - home
-        # direction = speed*direction
-        # new_pos = direction + np.array([agent.x,agent.y])
-        # direction = (grad[0] * (strn - min_strength),grad[1] * (strn - min_strength))
-        # direction = (random.random()+direction[0],random.random()+direction[1])
-        # direction = (direction[0],direction[1])
-        # new_pos = (agent.x+direction[0],agent.y+direction[1])
-        if not agent.model.space.out_of_bounds(new_pos):
+        
+        if isToroidal or not agent.model.space.out_of_bounds(new_pos):
             agent.model.space.move_agent(agent,new_pos)
-            agent.x = new_pos[0]
-            agent.y = new_pos[1]
-            update_seen(agent)
-            # gpu_update_seen(agent.pheremoneMap['seen'],agent.x,agent.y,b)
+            gpu_update_seen(agent.pheremoneMap['seen'],agent.pos[0],agent.pos[1],vis_rad,min_rad,seen_strength)
+            # update_seen(agent)
             return
         print('oob')
 
     def update_seen(agent):
+        A = (min_seen_radius*min_seen_radius+vis_rad*vis_rad)
+        A = seen_strength*min_seen_radius*min_seen_radius*A
+        B = vis_rad*vis_rad*min_seen_radius*min_seen_radius
+        C = seen_strength*min_seen_radius*min_seen_radius/(vis_rad*vis_rad)
         xmax = agent.model.space.width
         ymax = agent.model.space.height
-        threshold = vision_radius*b/(b+vision_radius*vision_radius)
-        x = int(agent.x)
-        y = int(agent.y)
+        x = int(agent.pos[0])
+        y = int(agent.pos[1])
         for i in range(vision_radius):
             i2 = i*i
             for j in range(vision_radius):
-                # strength = (vision_radius*vision_radius-i*i-j*j)
-                strength = vision_radius*b/(b+i2+j*j)-threshold
+                strength = A/(vis_rad*vis_rad*(i2+j*j)+B)-C
                 x1 = x-i
                 x2 = x+i
                 y1 = y-j
@@ -261,22 +246,30 @@ def scout_agent_behavior(speed = 5, relative_strengths = (.9,.1,.0), min_strengt
                     if(y2>=0 and y2<ymax):
                         agent.pheremoneMap['seen'][x2][y2] = max(strength,agent.pheremoneMap['seen'][x2][y2])
 
-    def seen_gradient(agent, samples = 10):
+    def seen_gradient(agent, samples = 40):
+        R2 = 0
         total_strength = 0
         total_gradient = np.array([0,0])
         for i in range(samples):
-            dx = random.normalvariate(sigma=vision_radius*2)
-            dy = random.normalvariate(sigma=vision_radius*2)
-            x = int(agent.x+dx)
-            y = int(agent.y+dy)
-            stren = 0
-            if not(x<0 or x>499 or y<0 or y>499):
-                stren = agent.pheremoneMap['seen'][x][y]
-            total_strength += stren*b/(b+dx*dx+dy*dy)
-            dsdx = stren*-2*dx*b/((b+dx*dx+dy*dy)**2)
-            dsdy = stren*-2*dy*b/((b+dx*dx+dy*dy)**2)
+            dx = random.normalvariate(sigma=vis_rad)
+            dy = random.normalvariate(sigma=vis_rad)
+            x = int(agent.pos[0]+dx)
+            y = int(agent.pos[1]+dy)
+            dx = x-agent.pos[0]
+            dy = y-agent.pos[1]
+            stren = agent.getPheremone('seen',x,y)
+            total_strength += stren*(dx*dx+dy*dy) #weight the average by how close they are to the robot
+            R2 += (dx*dx+dy*dy)
+            try:
+                dsdx = (seen_strength - stren)/dx #we know we have seen the current spot as well as possible
+            except:
+                dsdx = (seen_strength - stren)
+            try:
+                dsdy = (seen_strength - stren)/dy
+            except:
+                dsdy = (seen_strength - stren)
             total_gradient = total_gradient + np.array([dsdx,dsdy])
-        total_strength /= samples
+        total_strength /= R2
         total_gradient /= samples
         return total_strength, total_gradient
     
@@ -284,34 +277,38 @@ def scout_agent_behavior(speed = 5, relative_strengths = (.9,.1,.0), min_strengt
         total_strength = 0
         total_gradient = np.array([0,0])
         for neighbor in neighbors:
-            dx = agent.x - neighbor.x
-            dy = agent.y - neighbor.y
-            strength = b/(b+dx*dx+dy*dy)-b/(b+comm_radius*comm_radius)
+            dx = agent.pos[0] - neighbor.pos[0]
+            dy = agent.pos[1] - neighbor.pos[1]
+            strength = 1/(1+dx*dx+dy*dy)-1/(1+comm_radius*comm_radius)
             total_strength += strength
-            dsdx = -2*(dx)*b/((b+dx*dx+dy*dy)**2)
-            dsdy = -2*(dy)*b/((b+dx*dx+dy*dy)**2)
+            dsdx = -2*(dx)*1/((1+dx*dx+dy*dy)**2)
+            dsdy = -2*(dy)*1/((1+dx*dx+dy*dy)**2)
             total_gradient = total_gradient + np.array([dsdx,dsdy])
         return total_strength, total_gradient
     return behavior
 def scout_agent_draw():
     def draw(agent,screen):
-        neighbors = agent.model.space.get_neighbors((agent.x,agent.y),comm_radius,include_center=False)
-        pygame.draw.circle(screen, (128,0,255), (agent.x, agent.y), 5)
+        neighbors = agent.getConnections()
+        pygame.draw.circle(screen, (128,0,255), (agent.pos[0], agent.pos[1]), 5)
         for neighbor in neighbors:
-            pygame.draw.line(screen,(128,128,128),(agent.x,agent.y),(neighbor.x,neighbor.y))
+            pygame.draw.line(screen,(128,128,128),(agent.pos[0],agent.pos[1]),(neighbor.pos[0],neighbor.pos[1]))
     return draw
 
 
-# @jit(target_backend='cuda')
-# def gpu_update_seen(arr,x,y,b):
-#     threshold = b/(b+vision_radius*vision_radius)
-#     for i in range(500):
-#         dx2 = (i-x)*(i-x)
-#         for j in range(500):
-#             dy2 = (j-y)*(j-y)
-#             strength = b/(b+dx2+dy2)-threshold
-#             arr[i][j] = max(strength,arr[i][j])
+@jit(target_backend='cuda')
+def gpu_update_seen(arr,x,y,r,m,i):
+    A = (m*m+r*r)
+    A = i*m*m*A
+    B = r*r*m*m
+    C = i*m*m/(r*r)
+    for i in range(500):
+        dx2 = (i-x)*(i-x)
+        for j in range(500):
+            dy2 = (j-y)*(j-y)
+            strength = A/(r*r*(dy2+dx2)+B)-C
+            arr[i][j] = max(strength,arr[i][j])
 
-model = SystemModel(20, 500, 500)
+
+model = SystemModel(10, 500, 500)
 model.run_model()
 # cProfile.run('model.run_model()',sort='tottime')
