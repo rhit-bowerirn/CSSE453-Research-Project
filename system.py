@@ -8,11 +8,17 @@ from AgentType import AgentType
 import cProfile
 from numba import jit, cuda
 
+
+from ParallelActivation import ParallelActivation
+
+# from numba import jit, cuda
+
 comm_radius = 50
 vision_radius = 20
 max_seen_strength = 1
 min_seen_radius = 1
 isToroidal = False
+
 
 strength = []
 
@@ -101,6 +107,8 @@ class SystemAgent(mesa.Agent):
 
 class SystemModel(mesa.Model):
     def __init__(self, N, width, height):
+        # self.schedule = ParallelActivation(self) # TODO Depending on where this is in the init list, different errors happen
+        # self.schedule = RandomActivation(self) 
 
         pygame.init()
 
@@ -113,6 +121,13 @@ class SystemModel(mesa.Model):
         self.height = height
         self.schedule = mesa.time.RandomActivation(self)
         self.space = mesa.space.ContinuousSpace(width, height, isToroidal)
+
+        # self.space = mesa.space.ContinuousSpace(width, height, False)
+
+        self.clock = pygame.time.Clock()
+        self.total_time = self.clock.get_time()
+        self.last_print_time = self.total_time
+        self.one_second_frame_count = 0
         
         for i in range(N):
             x = random.random() * width
@@ -137,6 +152,13 @@ class SystemModel(mesa.Model):
                 self.quit()
         self.schedule.step()
         self.update_display()
+        self.total_time += self.clock.get_time()
+        if self.total_time - self.last_print_time >= 1000:
+            print(f"FPS: {self.one_second_frame_count}")
+            self.one_second_frame_count = 0
+            self.last_print_time = self.total_time
+        self.one_second_frame_count += 1
+        self.clock.tick()   
 
     def update_display(self):
         surf = pygame.surfarray.make_surface(self.root_agent.pheremoneMap['seen']*255/max_seen_strength)
@@ -216,7 +238,6 @@ def scout_agent_behavior(speed = 5, relative_strengths = (.9,.08,.02), min_stren
             gpu_update_seen(agent.pheremoneMap['seen'],agent.pos[0],agent.pos[1],vis_rad,min_rad,seen_strength)
             # update_seen(agent)
             return
-        print('oob')
 
     def update_seen(agent):
         A = (min_seen_radius*min_seen_radius+vis_rad*vis_rad)
@@ -286,6 +307,7 @@ def scout_agent_behavior(speed = 5, relative_strengths = (.9,.08,.02), min_stren
             total_gradient = total_gradient + np.array([dsdx,dsdy])
         return total_strength, total_gradient
     return behavior
+
 def scout_agent_draw():
     def draw(agent,screen):
         neighbors = agent.getConnections()
