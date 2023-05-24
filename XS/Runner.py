@@ -7,6 +7,9 @@ import numpy as np
 from AgentType import AgentType
 from Color import Color
 find = 0
+target_x = None
+target_y = None
+move_rate = 50
 
 
 def lj_magnitude(dist, lj_target, lj_epsilon):
@@ -52,6 +55,7 @@ class SystemAgent(mesa.Agent):
         self.y = start_y
         self.parent = None
         self.children = []
+        self.toRoot = False
         
     def step(self):
         self.behavior_func(self)
@@ -123,17 +127,32 @@ class SystemModel(mesa.Model):
         pygame.quit()
 
 # Scout robots
-def scout_agent_behavior(comm_radius = 40, min_strength = 1, b = 5, speed = 5, rnd = .05):
+def scout_agent_behavior(comm_radius = 100, min_strength = 1, b = 5, speed = 5, rnd = .05):
     def behavior(agent):
+        global find, target_x,target_y
         neighbors = agent.model.space.get_neighbors((agent.x,agent.y),comm_radius,include_center=False)
-        re = searching(agent, neighbors)
+        re, target = searching(agent, neighbors)
         if re == -1:
+            print(agent.unique_id)
             return
         elif re == 1:
-            # TODO find target
-            return
+            find = 1
+            target_x = target.x
+            target_y = target.y
+            new_pos = moveToTarget(agent)
+            if not agent.model.space.out_of_bounds(new_pos):
+                agent.model.space.move_agent(agent,new_pos)
+                agent.x = new_pos[0]
+                agent.y = new_pos[1]
+                return
         else:
             # TODO explore
+            new_pos = explore(agent)
+            if not agent.model.space.out_of_bounds(new_pos):
+                agent.model.space.move_agent(agent,new_pos)
+                agent.x = new_pos[0]
+                agent.y = new_pos[1]
+                return
             return
 
     # iterate through each neighbor,
@@ -143,14 +162,32 @@ def scout_agent_behavior(comm_radius = 40, min_strength = 1, b = 5, speed = 5, r
     def searching(agent, neighbors):
         neighbors = agent.model.space.get_neighbors((agent.x,agent.y),comm_radius,include_center=False)
         if(len(neighbors)==0):
-            return -1
+            return -1, None
         for neighbor in neighbors:
             if (neighbor.role == AgentType.TARGET):
-                return 1
+                return 1, neighbor
                 print(neighbor.role)
-        return 0
-    
+        return 0, None
+
+    # Function that get new position when target is found
+    def moveToTarget(agent):
+        total = target_x+target_y
+        diff_x = agent.x - target_x
+        diff_y = agent.y - target_y
+        vec = np.array([target_x - agent.x, target_y - agent.y])
+        scale = move_rate / (diff_x **2 + diff_y ** 2)
+        new_pos = np.array([agent.x, agent.y]) + vec * scale
+        return new_pos
+
+    # Function that generate a new direction
+    def explore(agent):
+        random_angle  = random.uniform(0, 2*math.pi)
+        vec = np.array([move_rate * math.sin(random_angle), move_rate*math.cos(random_angle)])
+        new_pos = np.array([agent.x, agent.y])+vec
+        return new_pos
+        
     def request():
+        pass
     return behavior
 
 def scout_agent_draw(comm_radius = 40):
