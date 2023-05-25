@@ -73,6 +73,8 @@ class SystemAgent(mesa.Agent):
         self.toRoot = False
         # This is for scout that have agent to follow
         self.followed = True
+        # Variable to check if in the overall network
+        self.connected_to_root = True
         
     def step(self):
         self.behavior_func(self)
@@ -116,6 +118,13 @@ class SystemModel(mesa.Model):
 
         self.running = True
 
+        for networker in range(NUM_NETWORKERS):
+            agent = SystemAgent(networker+2+NUM_SCOUTS, self, AgentType.NETWORKER, networker_agent_behavior(), networker_agent_draw(),root_x, root_y)
+            self.agents.append(agent)
+            self.schedule.add(agent)
+            self.space.place_agent(agent, (root_x, root_y))
+
+
         scout_process = []
         for process in range(NUM_SCOUTS):
             # pid = os.fork()
@@ -125,18 +134,13 @@ class SystemModel(mesa.Model):
                 # x = random.random() * width
                 # y = random.random() * height
 
-            agent = SystemAgent(process+2, self, AgentType.SCOUT, scout_agent_behavior(), scout_agent_draw(), root_x, root_y)
+            agent = SystemAgent(process+2, self, AgentType.SCOUT, scout_agent_behavior(), scout_agent_draw(), root_x+1, root_y+1)
                 
             self.agents.append(agent)
             self.schedule.add(agent)
-            self.space.place_agent(agent, (root_x, root_y))
+            self.space.place_agent(agent, (root_x+1, root_y+1))
 
-        for networker in range(NUM_NETWORKERS):
-            agent = SystemAgent(networker+2+NUM_SCOUTS, self, AgentType.NETWORKER, networker_agent_behavior(), networker_agent_draw(),root_x, root_y)
-            self.agents.append(agent)
-            self.schedule.add(agent)
-            self.space.place_agent(agent, (root_x, root_y))
-
+        
     
     def step(self):
         for event in pygame.event.get():
@@ -194,12 +198,15 @@ def scout_agent_behavior(comm_radius = scout_radius, min_strength = 1, b = 5, sp
     # if find target, then return 1
     # else return 0
     def searching(agent, neighbors):
-        # neighbors = agent.model.space.get_neighbors(pos=np.array([agent.x,agent.y]),radius=comm_radius,include_center=False)
         if(len(neighbors)==1 and neighbors[0].unique_id == agent.unique_id):
             return -1, None
+        connected = False
         for neighbor in neighbors:
             if (neighbor.role == AgentType.TARGET):
                 return 1, neighbor
+            connected = connected or neighbor.connected_to_root
+        if not connected:
+            return -1, None
         return 0, None
     
     # Function that check if near target, return 1 if so, 0 otherwise
@@ -259,11 +266,13 @@ def networker_agent_behavior(comm_radius = networker_radius, min_strength = 1, b
         # direction = speed*direction
         # new_pos = direction + np.array([agent.x,agent.y])
         new_pos = follow(agent, neighbors)
-        if not agent.model.space.out_of_bounds(new_pos):
+        if (not agent.model.space.out_of_bounds(new_pos)) and check_connection(agent, new_pos):
             agent.model.space.move_agent(agent,new_pos)
             agent.x = new_pos[0]
             agent.y = new_pos[1]
             return
+        if check_connection(agent,new_pos) == 0:
+            agent.followed = False
     def follow(agent, neighbors):
         for neighbor in neighbors:
             diff_x = neighbor.x - agent.x
@@ -277,6 +286,27 @@ def networker_agent_behavior(comm_radius = networker_radius, min_strength = 1, b
                 neighbor.follow = True
                 return new_pos
         return np.array([-1,-1])
+    # return 1 if the new position is still in connection to root, 0 otherwise
+    def check_connection(agent, pos):
+        connected = False
+        curr_x = agent.x
+        curr_y = agent.y
+        curr_pos = np.array([curr_x,curr_y])
+        if not agent.model.space.out_of_bounds(pos):
+            agent.model.space.move_agent(agent, pos)
+            agent.x = pos[0]
+            agent.y = pos[1]
+            neighbors = agent.model.space.get_neighbors((agent.x,agent.y),comm_radius,include_center=False)
+            connected = False
+            for neighbor in neighbors:
+                if(neighbor.unique_id != agent.unique_id):
+                    connected = connected or (neighbor.connected_to_root and neighbor.role != AgentType.SCOUT)
+        agent.model.space.move_agent(agent,curr_pos)
+        agent.x = curr_x
+        agent.y = curr_y
+        if connected == True:
+            return 1
+        return 0
 
     # def comm_gradient(agent, neighbors):
     #     total_strength = 0
