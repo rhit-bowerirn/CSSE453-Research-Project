@@ -13,8 +13,11 @@ NUM_NETWORKERS = 88
 find = 0
 target_x = None
 target_y = None
+root_x = None
+root_y = None
 move_rate = 20
 comm_radius = 40
+near_target = 0
 
 
 def lj_magnitude(dist, lj_target, lj_epsilon):
@@ -78,6 +81,9 @@ class SystemModel(mesa.Model):
     def __init__(self, N, width, height):
 
         pygame.init()
+        global root_x, root_y
+        root_x = width//2
+        root_y = height//2
 
         self.screen = pygame.display.set_mode((width, height))
         self.screen.fill((255, 255, 255))
@@ -89,10 +95,10 @@ class SystemModel(mesa.Model):
         self.schedule = mesa.time.RandomActivation(self)
         self.space = mesa.space.ContinuousSpace(width, height, True)
 
-        root_agent = SystemAgent(0, self, AgentType.ROOT, root_agent_behavior(), root_agent_draw(), width // 2, height // 2)
+        root_agent = SystemAgent(0, self, AgentType.ROOT, root_agent_behavior(), root_agent_draw(), root_x, root_y)
         self.agents.append(root_agent)
         self.schedule.add(root_agent)
-        self.space.place_agent(root_agent, (width // 2, height // 2))
+        self.space.place_agent(root_agent, (root_x, root_y))
 
         target = SystemAgent(1, self, AgentType.TARGET, target_agent_behavior(), target_agent_draw(), 10, 10)
         self.agents.append(target)
@@ -110,17 +116,17 @@ class SystemModel(mesa.Model):
                 # x = random.random() * width
                 # y = random.random() * height
 
-                agent = SystemAgent(process+2, self, AgentType.SCOUT, scout_agent_behavior(), scout_agent_draw(),width//2+(process+1)*10, height//2+(process+1)*10)
+                agent = SystemAgent(process+2, self, AgentType.SCOUT, scout_agent_behavior(), scout_agent_draw(), root_x+process *10, root_y+process*10)
                 
                 self.agents.append(agent)
                 self.schedule.add(agent)
-                self.space.place_agent(agent, (width//2+(process+1)*10, height//2+(process+1)*10))
+                self.space.place_agent(agent, (root_x+process*10, root_y+process*10))
 
         for networker in range(NUM_NETWORKERS):
-            agent = SystemAgent(networker+2+NUM_SCOUTS, self, AgentType.NETWORKER, networker_agent_behavior(), networker_agent_draw(),width//2, height//2)
+            agent = SystemAgent(networker+2+NUM_SCOUTS, self, AgentType.NETWORKER, networker_agent_behavior(), networker_agent_draw(),root_x, root_y)
             self.agents.append(agent)
             self.schedule.add(agent)
-            self.space.place_agent(agent, (width//2, height//2))
+            self.space.place_agent(agent, (root_x, root_y))
 
     
     def step(self):
@@ -150,7 +156,6 @@ def scout_agent_behavior(comm_radius = 40, min_strength = 1, b = 5, speed = 5, r
         neighbors = agent.model.space.get_neighbors((agent.x,agent.y),comm_radius,include_center=False)
         re, target = searching(agent, neighbors)
         
-        # print("kkk")
         if re == -1:
             # No neighbors, lost connection
             return
@@ -158,7 +163,7 @@ def scout_agent_behavior(comm_radius = 40, min_strength = 1, b = 5, speed = 5, r
             find = 1
             target_x = target.x
             target_y = target.y
-            new_pos = moveToTarget(agent)
+            new_pos = move_to_root(agent) if near_target(agent,neighbors) else move_to_target(agent)
             if not agent.model.space.out_of_bounds(new_pos):
                 agent.model.space.move_agent(agent,new_pos)
                 agent.x = new_pos[0]
@@ -166,11 +171,9 @@ def scout_agent_behavior(comm_radius = 40, min_strength = 1, b = 5, speed = 5, r
                 return
         else:
             # TODO explore]
-            # print(11)
             new_pos = explore(agent)
             if not agent.model.space.out_of_bounds(new_pos):
                 agent.model.space.move_agent(agent,new_pos)
-                # agent.model.space.remove_agent(agent)
                 agent.x = new_pos[0]
                 agent.y = new_pos[1]
                 return
@@ -181,20 +184,38 @@ def scout_agent_behavior(comm_radius = 40, min_strength = 1, b = 5, speed = 5, r
     # if find target, then return 1
     # else return 0
     def searching(agent, neighbors):
-        neighbors = agent.model.space.get_neighbors(pos=np.array([agent.x,agent.y]),radius=comm_radius,include_center=False)
+        # neighbors = agent.model.space.get_neighbors(pos=np.array([agent.x,agent.y]),radius=comm_radius,include_center=False)
         if(len(neighbors)==1 and neighbors[0].unique_id == agent.unique_id):
             return -1, None
         for neighbor in neighbors:
             if (neighbor.role == AgentType.TARGET):
                 return 1, neighbor
         return 0, None
+    
+    # Function that check if near target, return 1 if so, 0 otherwise
+    def near_target(agent,neighbors):
+        for neighbor in neighbors:
+            if neighbor.role == AgentType.TARGET:
+                return 1
+        return 0
+
 
     # Function that get new position when target is found
-    def moveToTarget(agent):
+    def move_to_target(agent):
         total = target_x+target_y
         diff_x = agent.x - target_x
         diff_y = agent.y - target_y
         vec = np.array([target_x - agent.x, target_y - agent.y])
+        scale = move_rate / (diff_x **2 + diff_y ** 2)
+        new_pos = np.array([agent.x, agent.y]) + vec * scale
+        return new_pos
+
+    # Funtion that get new position when back to root
+    def move_to_root(agent):
+        total = root_x+root_y
+        diff_x = agent.x - root_x
+        diff_y = agent.y - root_y
+        vec = np.array([root_x - agent.x, root_y - agent.y])
         scale = move_rate / (diff_x **2 + diff_y ** 2)
         new_pos = np.array([agent.x, agent.y]) + vec * scale
         return new_pos
