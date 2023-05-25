@@ -6,10 +6,15 @@ import time
 import numpy as np
 from AgentType import AgentType
 from Color import Color
+import os
+NUM_SCOUTS = 10
+NUM_NETWORKERS = 88
+
 find = 0
 target_x = None
 target_y = None
-move_rate = 50
+move_rate = 20
+comm_radius = 40
 
 
 def lj_magnitude(dist, lj_target, lj_epsilon):
@@ -83,28 +88,44 @@ class SystemModel(mesa.Model):
         self.height = height
         self.schedule = mesa.time.RandomActivation(self)
         self.space = mesa.space.ContinuousSpace(width, height, True)
-        
-        for i in range(N-1):
-            x = random.random() * width
-            y = random.random() * height
 
-            agent = SystemAgent(i, self, AgentType.SCOUT, scout_agent_behavior(), scout_agent_draw(), x, y)
-            
-            self.agents.append(agent)
-            self.schedule.add(agent)
-            self.space.place_agent(agent, (x, y))
-
-        root_agent = SystemAgent(N-1, self, AgentType.ROOT, root_agent_behavior(), root_agent_draw(), width // 2, height // 2)
+        root_agent = SystemAgent(0, self, AgentType.ROOT, root_agent_behavior(), root_agent_draw(), width // 2, height // 2)
         self.agents.append(root_agent)
         self.schedule.add(root_agent)
         self.space.place_agent(root_agent, (width // 2, height // 2))
 
-        target = SystemAgent(N, self, AgentType.TARGET, target_agent_behavior(), target_agent_draw(), 10, 10)
+        target = SystemAgent(1, self, AgentType.TARGET, target_agent_behavior(), target_agent_draw(), 10, 10)
         self.agents.append(target)
         self.schedule.add(target)
         self.space.place_agent(target, (10, 10))
 
         self.running = True
+
+        scout_process = []
+        for process in range(NUM_SCOUTS):
+            # pid = os.fork()
+            # if pid:
+            #     scout_process.append(pid)
+            # else:
+                # x = random.random() * width
+                # y = random.random() * height
+
+                agent = SystemAgent(process+3, self, AgentType.SCOUT, scout_agent_behavior(), scout_agent_draw(),width//2+(process+1)*10, height//2+(process+1)*10)
+                
+                self.agents.append(agent)
+                self.schedule.add(agent)
+                self.space.place_agent(agent, (width//2+(process+1)*10, height//2+(process+1)*10))
+                # os._exit(0)
+        # for i in range(N-1):
+        #     x = random.random() * width
+        #     y = random.random() * height
+
+        #     agent = SystemAgent(i, self, AgentType.SCOUT, scout_agent_behavior(), scout_agent_draw(), x, y)
+            
+        #     self.agents.append(agent)
+        #     self.schedule.add(agent)
+        #     self.space.place_agent(agent, (x, y))
+        
     
     def step(self):
         for event in pygame.event.get():
@@ -127,13 +148,15 @@ class SystemModel(mesa.Model):
         pygame.quit()
 
 # Scout robots
-def scout_agent_behavior(comm_radius = 100, min_strength = 1, b = 5, speed = 5, rnd = .05):
+def scout_agent_behavior(comm_radius = 40, min_strength = 1, b = 5, speed = 5, rnd = .05):
     def behavior(agent):
         global find, target_x,target_y
         neighbors = agent.model.space.get_neighbors((agent.x,agent.y),comm_radius,include_center=False)
         re, target = searching(agent, neighbors)
+        
+        # print("kkk")
         if re == -1:
-            print(agent.unique_id)
+            # No neighbors, lost connection
             return
         elif re == 1:
             find = 1
@@ -146,10 +169,12 @@ def scout_agent_behavior(comm_radius = 100, min_strength = 1, b = 5, speed = 5, 
                 agent.y = new_pos[1]
                 return
         else:
-            # TODO explore
+            # TODO explore]
+            # print(11)
             new_pos = explore(agent)
             if not agent.model.space.out_of_bounds(new_pos):
                 agent.model.space.move_agent(agent,new_pos)
+                # agent.model.space.remove_agent(agent)
                 agent.x = new_pos[0]
                 agent.y = new_pos[1]
                 return
@@ -160,13 +185,12 @@ def scout_agent_behavior(comm_radius = 100, min_strength = 1, b = 5, speed = 5, 
     # if find target, then return 1
     # else return 0
     def searching(agent, neighbors):
-        neighbors = agent.model.space.get_neighbors((agent.x,agent.y),comm_radius,include_center=False)
-        if(len(neighbors)==0):
+        neighbors = agent.model.space.get_neighbors(pos=np.array([agent.x,agent.y]),radius=comm_radius,include_center=False)
+        if(len(neighbors)==1 and neighbors[0].unique_id == agent.unique_id):
             return -1, None
         for neighbor in neighbors:
             if (neighbor.role == AgentType.TARGET):
                 return 1, neighbor
-                print(neighbor.role)
         return 0, None
 
     # Function that get new position when target is found
@@ -232,7 +256,7 @@ def networker_agent_behavior(comm_radius = 40, min_strength = 1, b = 5, speed = 
 def networker_agent_draw(comm_radius = 40):
     def draw(agent,screen):
         neighbors = agent.model.space.get_neighbors((agent.x,agent.y),comm_radius,include_center=False)
-        pygame.draw.circle(screen, Color.SCOUT.value, (agent.x, agent.y), 5)
+        pygame.draw.circle(screen, Color.NETWORKER.value, (agent.x, agent.y), 5)
         for neighbor in neighbors:
             pygame.draw.line(screen,Color.LINE.value,(agent.x,agent.y),(neighbor.x,neighbor.y))
     return draw
@@ -259,5 +283,5 @@ def target_agent_draw():
         pygame.draw.circle(screen, Color.TARGET.value, (agent.x, agent.y), 5)
     return draw
 
-model = SystemModel(100, 1000, 1000)
+model = SystemModel(2+NUM_NETWORKERS+NUM_SCOUTS, 1000, 1000)
 model.run_model()
