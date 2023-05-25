@@ -10,14 +10,21 @@ import os
 NUM_SCOUTS = 10
 NUM_NETWORKERS = 88
 
-find = 0
+# Globals 
+move_rate = 10
+scout_radius = 40
+networker_radius = 50
 target_x = None
 target_y = None
 root_x = None
 root_y = None
-move_rate = 20
-comm_radius = 40
+# 2 variables for the scouts\
+
+find = 0
 near_target = 0
+# 2 variable for the networkers
+path = 0
+follow = 0
 
 
 def lj_magnitude(dist, lj_target, lj_epsilon):
@@ -64,6 +71,8 @@ class SystemAgent(mesa.Agent):
         self.parent = None
         self.children = []
         self.toRoot = False
+        # This is for scout that have agent to follow
+        self.followed = True
         
     def step(self):
         self.behavior_func(self)
@@ -116,11 +125,11 @@ class SystemModel(mesa.Model):
                 # x = random.random() * width
                 # y = random.random() * height
 
-                agent = SystemAgent(process+2, self, AgentType.SCOUT, scout_agent_behavior(), scout_agent_draw(), root_x+process *10, root_y+process*10)
+            agent = SystemAgent(process+2, self, AgentType.SCOUT, scout_agent_behavior(), scout_agent_draw(), root_x, root_y)
                 
-                self.agents.append(agent)
-                self.schedule.add(agent)
-                self.space.place_agent(agent, (root_x+process*10, root_y+process*10))
+            self.agents.append(agent)
+            self.schedule.add(agent)
+            self.space.place_agent(agent, (root_x, root_y))
 
         for networker in range(NUM_NETWORKERS):
             agent = SystemAgent(networker+2+NUM_SCOUTS, self, AgentType.NETWORKER, networker_agent_behavior(), networker_agent_draw(),root_x, root_y)
@@ -150,12 +159,13 @@ class SystemModel(mesa.Model):
         pygame.quit()
 
 # Scout robots
-def scout_agent_behavior(comm_radius = 40, min_strength = 1, b = 5, speed = 5, rnd = .05):
+def scout_agent_behavior(comm_radius = scout_radius, min_strength = 1, b = 5, speed = 5, rnd = .05):
     def behavior(agent):
         global find, target_x,target_y
         neighbors = agent.model.space.get_neighbors((agent.x,agent.y),comm_radius,include_center=False)
         re, target = searching(agent, neighbors)
-        
+        agent.followed = False
+
         if re == -1:
             # No neighbors, lost connection
             return
@@ -170,7 +180,7 @@ def scout_agent_behavior(comm_radius = 40, min_strength = 1, b = 5, speed = 5, r
                 agent.y = new_pos[1]
                 return
         else:
-            # TODO explore]
+            # TODO explore
             new_pos = explore(agent)
             if not agent.model.space.out_of_bounds(new_pos):
                 agent.model.space.move_agent(agent,new_pos)
@@ -237,34 +247,49 @@ def scout_agent_draw(comm_radius = 40):
     return draw
 
 # networker robots
-def networker_agent_behavior(comm_radius = 40, min_strength = 1, b = 5, speed = 5, rnd = .05):
+def networker_agent_behavior(comm_radius = networker_radius, min_strength = 1, b = 5, speed = 5, rnd = .05):
     def behavior(agent):
         neighbors = agent.model.space.get_neighbors((agent.x,agent.y),comm_radius,include_center=False)
-        strn, grad = comm_gradient(agent,neighbors)
-        if len(neighbors) == 0:
-            strn = 0
-            grad = np.array([agent.x-250,agent.y-250])
-            grad = grad/np.sqrt((grad*grad).sum())
-        direction = grad*(strn-min_strength)
-        direction = speed*direction
-        new_pos = direction + np.array([agent.x,agent.y])
+        # strn, grad = comm_gradient(agent,neighbors)
+        # if len(neighbors) == 0:
+        #     strn = 0
+        #     grad = np.array([agent.x-250,agent.y-250])
+        #     grad = grad/np.sqrt((grad*grad).sum())
+        # direction = grad*(strn-min_strength)
+        # direction = speed*direction
+        # new_pos = direction + np.array([agent.x,agent.y])
+        new_pos = follow(agent, neighbors)
         if not agent.model.space.out_of_bounds(new_pos):
             agent.model.space.move_agent(agent,new_pos)
             agent.x = new_pos[0]
             agent.y = new_pos[1]
             return
-    def comm_gradient(agent, neighbors):
-        total_strength = 0
-        total_gradient = np.array([0,0])
+    def follow(agent, neighbors):
         for neighbor in neighbors:
-            dx = agent.x - neighbor.x
-            dy = agent.y - neighbor.y
-            strength = b/(b+dx*dx+dy*dy)-b/(b+comm_radius)
-            total_strength += strength
-            dsdx = -2*(dx)*b/((b+dx*dx+dy*dy)**2)
-            dsdy = -2*(dy)*b/((b+dx*dx+dy*dy)**2)
-            total_gradient = total_gradient + np.array([dsdx,dsdy])
-        return total_strength, total_gradient
+            diff_x = neighbor.x - agent.x
+            diff_y = neighbor.y - agent.y
+            dist = math.sqrt(diff_x**2 + diff_y**2)
+            if dist > scout_radius-10 and neighbor.followed == False:
+                neighbor.followed = True
+                scale = move_rate/(dist)
+                vec = np.array([diff_x,diff_y])
+                new_pos = np.array([agent.x, agent.y])+vec*scale
+                neighbor.follow = True
+                return new_pos
+        return np.array([-1,-1])
+
+    # def comm_gradient(agent, neighbors):
+    #     total_strength = 0
+    #     total_gradient = np.array([0,0])
+    #     for neighbor in neighbors:
+    #         dx = agent.x - neighbor.x
+    #         dy = agent.y - neighbor.y
+    #         strength = b/(b+dx*dx+dy*dy)-b/(b+comm_radius)
+    #         total_strength += strength
+    #         dsdx = -2*(dx)*b/((b+dx*dx+dy*dy)**2)
+    #         dsdy = -2*(dy)*b/((b+dx*dx+dy*dy)**2)
+    #         total_gradient = total_gradient + np.array([dsdx,dsdy])
+    #     return total_strength, total_gradient
     # def request 
     return behavior
 def networker_agent_draw(comm_radius = 40):
