@@ -110,22 +110,18 @@ class SystemModel(mesa.Model):
                 # x = random.random() * width
                 # y = random.random() * height
 
-                agent = SystemAgent(process+3, self, AgentType.SCOUT, scout_agent_behavior(), scout_agent_draw(),width//2+(process+1)*10, height//2+(process+1)*10)
+                agent = SystemAgent(process+2, self, AgentType.SCOUT, scout_agent_behavior(), scout_agent_draw(),width//2+(process+1)*10, height//2+(process+1)*10)
                 
                 self.agents.append(agent)
                 self.schedule.add(agent)
                 self.space.place_agent(agent, (width//2+(process+1)*10, height//2+(process+1)*10))
-                # os._exit(0)
-        # for i in range(N-1):
-        #     x = random.random() * width
-        #     y = random.random() * height
 
-        #     agent = SystemAgent(i, self, AgentType.SCOUT, scout_agent_behavior(), scout_agent_draw(), x, y)
-            
-        #     self.agents.append(agent)
-        #     self.schedule.add(agent)
-        #     self.space.place_agent(agent, (x, y))
-        
+        for networker in range(NUM_NETWORKERS):
+            agent = SystemAgent(networker+2+NUM_SCOUTS, self, AgentType.NETWORKER, networker_agent_behavior(), networker_agent_draw(),width//2, height//2)
+            self.agents.append(agent)
+            self.schedule.add(agent)
+            self.space.place_agent(agent, (width//2, height//2))
+
     
     def step(self):
         for event in pygame.event.get():
@@ -216,10 +212,7 @@ def scout_agent_behavior(comm_radius = 40, min_strength = 1, b = 5, speed = 5, r
 
 def scout_agent_draw(comm_radius = 40):
     def draw(agent,screen):
-        neighbors = agent.model.space.get_neighbors((agent.x,agent.y),comm_radius,include_center=False)
         pygame.draw.circle(screen, Color.SCOUT.value, (agent.x, agent.y), 5)
-        for neighbor in neighbors:
-            pygame.draw.line(screen,Color.LINE.value,(agent.x,agent.y),(neighbor.x,neighbor.y))
     return draw
 
 # networker robots
