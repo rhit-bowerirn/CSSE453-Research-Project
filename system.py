@@ -9,32 +9,27 @@ from AgentType import AgentType
 def lj_magnitude(dist, lj_target, lj_epsilon):
     return -(lj_epsilon / dist) * ((lj_target / dist)**4 - (lj_target / dist)**.5)
 
-def lj_vector(robot, other_robots):
-    total_dx = 0
-    total_dy = 0
-    for other_robot in other_robots:
-        if other_robot is not robot:
-            dx = other_robot.x - robot.x
-            dy = other_robot.y - robot.y
-            dist = math.sqrt(dx**2 + dy**2)
-            if not(dist == 0) and other_robot.role.value == "root":
-                mag = lj_magnitude(dist, 25, 100)
-                total_dx += mag * dx / dist
-                total_dy += mag * dy / dist
-    return (total_dx, total_dy)
+def lj_vector(robot):
+    root = robot.model.root_agent
+    dx = root.x - robot.x
+    dy = root.y - robot.y
+    dist = math.sqrt(dx**2 + dy**2)
+    mag = lj_magnitude(dist, 25, 100)
+    lj_x = mag * dx / dist
+    lj_y = mag * dy / dist
+    return (lj_x, lj_y)
 
-def obstacle_avoidance(robot, other_robots, safe_dist = 25, k = .4):
+def obstacle_avoidance(robot, safe_dist = 25, k = .4):
+    neighbors = robot.model.space.get_neighbors((robot.x, robot.y), safe_dist, include_center=False)
     total_dx = 0
     total_dy = 0
-    for other_robot in other_robots:
-        if other_robot is not robot:
-            dx = other_robot.x - robot.x
-            dy = other_robot.y - robot.y
-            dist = math.sqrt(dx**2 + dy**2)
-            if(dist < safe_dist):
-                mag = k * (dist - safe_dist)
-                total_dx += mag * dx / dist
-                total_dy += mag * dy / dist
+    for neighbor in neighbors:
+        dx = neighbor.x - robot.x
+        dy = neighbor.y - robot.y
+        dist = math.sqrt(dx**2 + dy**2)
+        mag = k * (dist - safe_dist)
+        total_dx += mag * dx / dist
+        total_dy += mag * dy / dist
     return(total_dx, total_dy)
 
 
@@ -77,20 +72,30 @@ class SystemModel(mesa.Model):
         self.schedule = mesa.time.RandomActivation(self)
         self.space = mesa.space.ContinuousSpace(width, height, True)
         
-        for i in range(N):
+        for i in range(N // 2):
             x = random.random() * width
             y = random.random() * height
 
-            agent = SystemAgent(i, self, AgentType.FREE, scout_agent_behavior(), scout_agent_draw(), x, y)
+            agent = SystemAgent(i, self, AgentType.NETWORKER, scout_agent_behavior(), scout_agent_draw(), x, y)
             
             self.agents.append(agent)
             self.schedule.add(agent)
             self.space.place_agent(agent, (x, y))
 
-        root_agent = SystemAgent(N, self, AgentType.ROOT, root_agent_behavior(), root_agent_draw(), width // 2, height // 2)
-        self.agents.append(root_agent)
-        self.schedule.add(root_agent)
-        self.space.place_agent(root_agent, (width // 2, height // 2))
+        for i in range(N // 2):
+            x = random.random() * width
+            y = random.random() * height
+
+            agent = SystemAgent(N // 2 + i, self, AgentType.FREE, free_agent_behavior(), free_agent_draw(), x, y)
+            
+            self.agents.append(agent)
+            self.schedule.add(agent)
+            self.space.place_agent(agent, (x, y))
+
+        self.root_agent = SystemAgent(N, self, AgentType.ROOT, root_agent_behavior(), root_agent_draw(), width // 2, height // 2)
+        self.agents.append(self.root_agent)
+        self.schedule.add(self.root_agent)
+        self.space.place_agent(self.root_agent, (width // 2, height // 2))
 
         self.running = True
     
@@ -117,8 +122,8 @@ class SystemModel(mesa.Model):
 # Free robots
 def free_agent_behavior():
     def behavior(agent):
-        lj = lj_vector(agent, agent.model.agents)
-        obst = obstacle_avoidance(agent, agent.model.agents)
+        lj = lj_vector(agent)
+        obst = obstacle_avoidance(agent)
         agent.x += lj[0] + obst[0]
         agent.y += lj[1] + obst[1]
         agent.model.space.move_agent(agent, (agent.x, agent.y))
